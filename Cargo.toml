@@ -1,0 +1,12 @@
+[package]
+name = "sekai-injector"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+gumdrop = "0.8.1"
+toml = "0.8.22"
+serde = { version = "1.0.216", features = ["derive"] }
+env_logger = "0.11.6"
+log = "0.4.22"
+certgenutil = "0.1.1"
