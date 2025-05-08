@@ -1,12 +1,23 @@
+mod certificates;
+mod routes;
 mod utils;
+
+use axum::{Router, routing::get};
+use axum_server::tls_rustls::RustlsConfig;
+use certificates::generate_certs_interactive;
+use colored::Colorize;
 use env_logger::Builder;
 use gumdrop::Options;
 use log::LevelFilter;
 use log::{debug, error, info};
 use std::fs::File;
 use std::io::{Read, Write};
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+
 use utils::Config;
+use utils::Ports;
 
 #[derive(Debug, Options)]
 struct CommandOptions {
@@ -26,7 +37,7 @@ enum Command {
     #[options(help = "start the server")]
     Start(StartOptions),
 
-    #[options(help = "generate CA and certificates")]
+    #[options(help = "interactively generate CA and certificates")]
     GenerateCerts(GenerateCertsOptions),
 
     #[options(help = "decrypt assetbundle")]
@@ -60,7 +71,8 @@ struct EncryptOptions {
     output: PathBuf,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let opts = CommandOptions::parse_args_default_or_exit();
 
     let mut builder = Builder::new();
@@ -77,7 +89,7 @@ fn main() {
         None => "sekai-injector.toml".to_string(),
     };
 
-    info!("ハローセカイ!");
+    info!("{}", "ハローセカイ!".green());
 
     debug!("Using config: {config_path}");
 
@@ -94,8 +106,8 @@ fn main() {
     let config_holder: Config = toml::from_str(&config_file_contents)
         .expect("The config file was not formatted properly and could not be read.");
 
-    if let Some(Command::GenerateCerts(ref generate_certs_options)) = opts.command {
-        info!("Generating certificates...");
+    if let Some(Command::GenerateCerts(ref _generate_certs_options)) = opts.command {
+        generate_certs_interactive(&config_holder);
     } else if let Some(Command::Decrypt(ref decrypt_options)) = opts.command {
         info!(
             "Decrypting assetbundle {} into {}",
@@ -140,9 +152,46 @@ fn main() {
                 )
             }
         };
+    } else if let Some(Command::Start(ref _start_options)) = opts.command {
+        tracing_subscriber::registry()
+            .with(
+                tracing_subscriber::EnvFilter::try_from_default_env()
+                    .unwrap_or_else(|_| format!("{}=debug", env!("CARGO_CRATE_NAME")).into()),
+            )
+            .with(tracing_subscriber::fmt::layer())
+            .init();
+
+        let ports = Ports {
+            http: 7878,
+            https: 3000,
+        };
+        // optional: spawn a second server to redirect http requests to this server
+        tokio::spawn(routes::redirect_http_to_https(ports.clone()));
+
+        // configure certificate and private key used by https
+        let config = RustlsConfig::from_pem_file(
+            PathBuf::from(&config_holder.server_cert),
+            PathBuf::from(&config_holder.server_key),
+        )
+        .await
+        .unwrap();
+
+        let cloned_config = config_holder.clone();
+        let app = Router::new()
+            .route("/", get(routes::handler))
+            .with_state(cloned_config);
+
+        // run https server
+        let addr = SocketAddr::from(([127, 0, 0, 1], ports.https));
+        tracing::debug!("listening on {}", addr);
+        axum_server::bind_rustls(addr, config)
+            .serve(app.into_make_service())
+            .await
+            .unwrap();
     }
 }
 
+// This is all Project Sekai specific. As such, it may be removed without warning.
 fn decrypt(infile: &Path, outfile: &Path) -> std::io::Result<()> {
     // All credit for figuring out decryption goes to https://github.com/mos9527
 
@@ -189,7 +238,7 @@ fn encrypt(infile: &Path, outfile: &Path) -> std::io::Result<()> {
         let mut block = [0u8; 8];
         if fin.read_exact(&mut block).is_ok() {
             for i in 0..5 {
-                block[i] = !block[i] & 0xff;
+                block[i] = !block[i];
             }
             fout.write_all(&block)?;
         } else {
@@ -199,7 +248,7 @@ fn encrypt(infile: &Path, outfile: &Path) -> std::io::Result<()> {
 
     // Copy the rest of the file as-is
     let mut buffer = [0u8; 8];
-    while let Ok(_) = fin.read_exact(&mut buffer) {
+    while fin.read_exact(&mut buffer).is_ok() {
         fout.write_all(&buffer)?;
     }
 
