@@ -1,4 +1,6 @@
-app_version = "5.2.0"
-apphash = "fdsfds"
 inject_resources = true
-resource_config = "fdsfds"
+resource_config = "resource_config.json"
+sekai_asset_host = "assetbundle.sekai-en.com"
+target_ip = "127.0.0.1"
+server_cert = "server_cert.pem"
+server_key = "server_key.pem"
