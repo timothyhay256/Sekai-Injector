@@ -1,18 +1,19 @@
-use crate::utils::{Config, Ports};
-use axum::extract::State;
-use axum::response::IntoResponse;
+use std::net::SocketAddr;
+
 use axum::{
     BoxError,
     body::Body,
-    extract::Request,
+    extract::{Request, State},
     handler::HandlerWithoutStateExt,
     http::{StatusCode, uri::Authority},
-    response::Redirect,
+    response::{IntoResponse, Redirect, Response},
 };
-
 use axum_extra::extract::Host;
 use hyper::Uri;
-use std::net::SocketAddr;
+use log::{error, info};
+use tokio::fs;
+
+use crate::utils::{Manager, Ports};
 
 #[allow(dead_code)]
 pub async fn redirect_http_to_https(ports: Ports) {
@@ -51,7 +52,7 @@ pub async fn redirect_http_to_https(ports: Ports) {
         }
     };
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], ports.http));
+    let addr = SocketAddr::from(([0, 0, 0, 0], ports.http));
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     tracing::debug!("listening on {}", listener.local_addr().unwrap());
     axum::serve(listener, redirect.into_make_service())
@@ -59,24 +60,44 @@ pub async fn redirect_http_to_https(ports: Ports) {
         .unwrap();
 }
 
-pub async fn handler(State(state): State<Config>, request: Request<Body>) -> impl IntoResponse {
+pub async fn handler(
+    State(state): State<Manager>,
+    mut request: Request<Body>,
+) -> impl IntoResponse {
     let path = request.uri().path().to_string();
 
-    // // Check if the path should return a local file
-    // if let Some(local_file_path) = state.local_files.get(&path) {
-    //     // Serve the local file
-    //     if let Ok(file_content) = fs::read(local_file_path).await {
-    //         Ok(Response::new(Body::from(file_content)))
-    //     } else {
-    //         Ok(Response::builder()
-    //             .status(StatusCode::NOT_FOUND)
-    //             .body(Body::from("File not found"))
-    //             .unwrap())
-    //     }
-    // } else {
-    //     // Forward the request to the upstream server
-    //     forward_request(request, &state.upstream_url).await
-    // }
-    // forward_request(request, &state.upstream_host).await
-    Redirect::permanent(&format!("{}/{}", state.upstream_host, path))
+    if state.config.inject_resources {
+        if let Some(local_file_path) = state.injection_hashmap.get(&path) {
+            let local_file_path = &local_file_path.0;
+
+            match fs::read(local_file_path).await {
+                Ok(file_content) => {
+                    info!("Injecting {local_file_path} to request {path}!");
+                    return Response::new(Body::from(file_content));
+                }
+                Err(_) => {
+                    error!("Could not find {local_file_path}, redirecting instead!");
+                }
+            }
+        }
+    }
+
+    info!("Proxying {path} to upstream host");
+    let path_query = request
+        .uri()
+        .path_and_query()
+        .map(|v| v.as_str())
+        .unwrap_or(&path);
+
+    let uri = format!("https://{}{}", state.config.upstream_host, path_query);
+
+    *request.uri_mut() = Uri::try_from(uri).unwrap();
+
+    match state.client.request(request).await {
+        Ok(request) => request.into_response(),
+        Err(e) => {
+            error!("Failed to make request to upstream host: {e}");
+            StatusCode::BAD_REQUEST.into_response()
+        }
+    }
 }

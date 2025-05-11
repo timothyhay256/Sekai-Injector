@@ -1,14 +1,12 @@
+use std::{fs::File, io::Write, path::Path, process::exit};
+
 use colored::Colorize;
 use inquire::{CustomType, Text};
 use log::{error, info};
 use rcgen::{
     BasicConstraints, CertificateParams, DistinguishedName, DnType, ExtendedKeyUsagePurpose, IsCa,
-    KeyPair, KeyUsagePurpose,
+    KeyPair, KeyUsagePurpose, SerialNumber,
 };
-use std::fs::File;
-use std::io::Write;
-use std::path::Path;
-use std::process::exit;
 use time::{Duration, OffsetDateTime};
 
 use crate::utils::Config;
@@ -24,12 +22,16 @@ pub fn generate_ca(
     params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
     params.key_usages = vec![KeyUsagePurpose::KeyCertSign, KeyUsagePurpose::CrlSign];
     params.not_before = OffsetDateTime::now_utc();
-    params.not_after = OffsetDateTime::now_utc() + Duration::days(ca_lifetime_days * 10);
+    params.not_after = OffsetDateTime::now_utc() + Duration::days(ca_lifetime_days);
 
-    // Set the Distinguished Name
+    // Set the Distinguished Name and other fields to make the CA seem real
     let mut dn = DistinguishedName::new();
     dn.push(DnType::CommonName, ca_common_name);
+    dn.push(DnType::OrganizationName, "Sekai Injector Organization");
+    dn.push(DnType::CountryName, "JP");
     params.distinguished_name = dn;
+    params.use_authority_key_identifier_extension = true;
+    params.serial_number = Some(SerialNumber::from(rand::random::<u64>()));
 
     // Generate a key pair and create the self-signed CA certificate
     let key_pair = KeyPair::generate()?;
@@ -53,6 +55,7 @@ pub fn new_self_signed_cert(
     distinguished_common_name: String,
     cert_file_out_path: String,
     cert_key_out_path: String,
+    cert_lifetime_days: i64,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Load the CA certificate and key
     let ca_cert_pem = std::fs::read_to_string(ca_cert_pem_path)?;
@@ -69,7 +72,7 @@ pub fn new_self_signed_cert(
     ];
     params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
     params.not_before = OffsetDateTime::now_utc();
-    params.not_after = OffsetDateTime::now_utc() + Duration::days(365);
+    params.not_after = OffsetDateTime::now_utc() + Duration::days(cert_lifetime_days);
 
     // Set the Distinguished Name
     let mut dn = DistinguishedName::new();
@@ -145,6 +148,12 @@ pub fn generate_certs_interactive(config_holder: &Config) {
         .prompt()
         .unwrap();
 
+    let cert_lifetime_days: i64 = CustomType::new("How many days should the certificate be valid?")
+        .with_error_message("Please type a valid number")
+        .with_default(3650)
+        .prompt()
+        .unwrap();
+
     let ca_cert_pem_path = Text::new("CA certificate path")
         .with_default("ca_cert.pem")
         .prompt()
@@ -175,6 +184,7 @@ pub fn generate_certs_interactive(config_holder: &Config) {
         distinguished_common_name,
         cert_file_out_path.clone(),
         cert_key_out_path.clone(),
+        cert_lifetime_days,
     ) {
         Ok(_) => info!("Succesfully signed certificate with CA"),
         Err(e) => {
