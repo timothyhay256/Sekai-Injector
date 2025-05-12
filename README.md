@@ -28,7 +28,7 @@ map = [
 
 Where `whip-2024-scenario-override-encrypted` was modified using [UABE](https://github.com/nesrak1/UABEA) and encrypted using [sssekai](https://github.com/mos9527/sssekai)
 
-**This is currently being written for usage with Project Sekai: Colorful Stage. I am attempting to write it to be game-agnostic however, with all game-specific logic being restricted to config files. This should mean it can be used for whatever use needed. It currently only supports GET requests, as this is what is used in Project Sekai when hotloading assets.**
+**This is currently being written for usage with Project Sekai: Colorful Stage. I am attempting to write it to be game-agnostic however, with all game-specific logic being restricted to config files. This should mean it can be used for whatever use needed.**
 
 **It is currently very simple, and will hopefully evolve over time.**
 
