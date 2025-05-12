@@ -11,7 +11,8 @@
 ## Demo video
 This injects a simple modified scenario into Project Sekai, resulting in custom text.
 
-<video width="320" height="240" controls src="https://files.catbox.moe/z2ye3g.mp4" title="Demo video"></video>
+https://github.com/user-attachments/assets/67990292-ff0b-4ed7-a8fb-09c073507db1
+
 </div>
 
 It uses the following injections.toml: 
