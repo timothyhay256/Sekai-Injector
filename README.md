@@ -2,7 +2,7 @@
    <img align="center" width="128px" src="https://files.catbox.moe/hvrqg1.png" />
 	<h1 align="center"><b>Sekai Injector</b></h1>
 	<p align="center">
-		<b>A selective Rust proxy</b>
+		<b>A simple selective Rust proxy</b>
     <br />
   </p>
 	
