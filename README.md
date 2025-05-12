@@ -8,7 +8,7 @@
 	
 [![Build](https://github.com/timothyhay256/Sekai-Injector/actions/workflows/rust.yml/badge.svg)](https://github.com/timothyhay256/Sekai-Injector/actions/workflows/rust.yml)
 
-## Demo video
+### Demo video
 This injects a simple modified scenario into Project Sekai, resulting in custom text.
 
 https://github.com/user-attachments/assets/67990292-ff0b-4ed7-a8fb-09c073507db1
