@@ -9,7 +9,7 @@ use rcgen::{
 };
 use time::{Duration, OffsetDateTime};
 
-use crate::utils::Config;
+use crate::{CertificateGenParams, utils::Config};
 
 pub fn generate_ca(
     ca_common_name: String,
@@ -48,35 +48,35 @@ pub fn generate_ca(
 }
 
 pub fn new_self_signed_cert(
-    ca_cert_pem_path: String,
-    ca_key_pem_path: String,
-    target_hostname: String,
-    target_ip: String,
-    distinguished_common_name: String,
-    cert_file_out_path: String,
-    cert_key_out_path: String,
-    cert_lifetime_days: i64,
+    cert_gen_params: CertificateGenParams,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Load the CA certificate and key
-    let ca_cert_pem = std::fs::read_to_string(ca_cert_pem_path)?;
-    let ca_key_pem = std::fs::read_to_string(ca_key_pem_path)?;
+    let ca_cert_pem = std::fs::read_to_string(cert_gen_params.ca_cert_pem_path)?;
+    let ca_key_pem = std::fs::read_to_string(cert_gen_params.ca_key_pem_path)?;
     let ca_cert_params = CertificateParams::from_ca_cert_pem(&ca_cert_pem)?;
     let ca_key = KeyPair::from_pem(&ca_key_pem)?;
     let ca_cert = ca_cert_params.self_signed(&ca_key)?;
 
     // Set up parameters for the server certificate
-    let mut params = CertificateParams::new(vec![target_hostname, target_ip.to_string()])?;
+    let mut params = CertificateParams::new(vec![
+        cert_gen_params.target_hostname.clone(),
+        cert_gen_params.target_ip.clone(),
+    ])?;
     params.key_usages = vec![
         KeyUsagePurpose::DigitalSignature,
         KeyUsagePurpose::KeyEncipherment,
     ];
     params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
     params.not_before = OffsetDateTime::now_utc();
-    params.not_after = OffsetDateTime::now_utc() + Duration::days(cert_lifetime_days);
+    params.not_after =
+        OffsetDateTime::now_utc() + Duration::days(*cert_gen_params.cert_lifetime_days);
 
     // Set the Distinguished Name
     let mut dn = DistinguishedName::new();
-    dn.push(DnType::CommonName, distinguished_common_name);
+    dn.push(
+        DnType::CommonName,
+        cert_gen_params.distinguished_common_name,
+    );
     params.distinguished_name = dn;
 
     // Generate a key pair and create the server certificate signed by the CA
@@ -84,10 +84,10 @@ pub fn new_self_signed_cert(
     let server_cert = params.signed_by(&key_pair, &ca_cert, &ca_key)?;
 
     // Save the server certificate and private key to files
-    let mut cert_file = File::create(cert_file_out_path)?;
+    let mut cert_file = File::create(cert_gen_params.cert_file_out_path)?;
     cert_file.write_all(server_cert.pem().as_bytes())?;
 
-    let mut key_file = File::create(cert_key_out_path)?;
+    let mut key_file = File::create(cert_gen_params.cert_key_out_path)?;
     key_file.write_all(key_pair.serialize_pem().as_bytes())?;
 
     Ok(())
@@ -176,16 +176,16 @@ pub fn generate_certs_interactive(config_holder: &Config) {
         .prompt()
         .unwrap();
 
-    match new_self_signed_cert(
-        ca_cert_pem_path,
-        ca_key_pem_path,
-        target_hostname,
-        target_ip,
-        distinguished_common_name,
-        cert_file_out_path.clone(),
-        cert_key_out_path.clone(),
-        cert_lifetime_days,
-    ) {
+    match new_self_signed_cert(CertificateGenParams {
+        ca_cert_pem_path: &ca_cert_pem_path,
+        ca_key_pem_path: &ca_key_pem_path,
+        target_hostname: &target_hostname,
+        target_ip: &target_ip,
+        distinguished_common_name: &distinguished_common_name,
+        cert_file_out_path: &cert_file_out_path,
+        cert_key_out_path: &cert_key_out_path,
+        cert_lifetime_days: &cert_lifetime_days,
+    }) {
         Ok(_) => info!("Succesfully signed certificate with CA"),
         Err(e) => {
             error!("There was an issue signing the certificate: {e}");

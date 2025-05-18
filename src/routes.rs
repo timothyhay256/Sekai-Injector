@@ -1,4 +1,4 @@
-use std::net::SocketAddr;
+use std::{net::SocketAddr, sync::Arc};
 
 use axum::{
     BoxError,
@@ -11,7 +11,7 @@ use axum::{
 use axum_extra::extract::Host;
 use hyper::Uri;
 use log::{error, info};
-use tokio::fs;
+use tokio::{fs, sync::RwLock};
 
 use crate::utils::{Manager, Ports};
 
@@ -61,18 +61,19 @@ pub async fn redirect_http_to_https(ports: Ports) {
 }
 
 pub async fn handler(
-    State(state): State<Manager>,
+    State(state): State<Arc<RwLock<Manager>>>,
     mut request: Request<Body>,
 ) -> impl IntoResponse {
     let path = request.uri().path().to_string();
 
-    if state.config.inject_resources {
-        if let Some(local_file_path) = state.injection_hashmap.get(&path) {
+    if state.read().await.config.inject_resources {
+        if let Some(local_file_path) = state.read().await.injection_hashmap.get(&path) {
             let local_file_path = &local_file_path.0;
 
             match fs::read(local_file_path).await {
                 Ok(file_content) => {
                     info!("Injecting {local_file_path} to request {path}!");
+                    state.write().await.statistics.0 += 1;
                     return Response::new(Body::from(file_content));
                 }
                 Err(_) => {
@@ -89,12 +90,19 @@ pub async fn handler(
         .map(|v| v.as_str())
         .unwrap_or(&path);
 
-    let uri = format!("https://{}{}", state.config.upstream_host, path_query);
+    let uri = format!(
+        "https://{}{}",
+        state.read().await.config.upstream_host,
+        path_query
+    );
 
     *request.uri_mut() = Uri::try_from(uri).unwrap();
 
-    match state.client.request(request).await {
-        Ok(request) => request.into_response(),
+    match state.read().await.client.request(request).await {
+        Ok(request) => {
+            state.write().await.statistics.1 += 1;
+            request.into_response()
+        }
         Err(e) => {
             error!("Failed to make request to upstream host: {e}");
             StatusCode::BAD_REQUEST.into_response()

@@ -5,7 +5,7 @@ use hyper_rustls::HttpsConnector;
 use hyper_util::client::legacy::Client;
 use serde::Deserialize;
 
-type InjectionHashMap = HashMap<String, (String, bool)>;
+pub type InjectionHashMap = HashMap<String, (String, bool)>;
 type InjectionMapItem = Vec<(String, String, bool)>;
 
 #[derive(Deserialize, Debug, Clone)]
@@ -29,9 +29,21 @@ pub struct Manager {
     pub injection_hashmap: InjectionHashMap,
     pub config: Config,
     pub client: Client<HttpsConnector<hyper_util::client::legacy::connect::HttpConnector>, Body>,
+    pub statistics: (i32, i32), // (proxied requests, injected requests)
 }
 
 #[derive(Clone, Deserialize)]
 pub struct InjectionMap {
     pub map: InjectionMapItem,
+}
+
+pub struct CertificateGenParams<'a> {
+    pub ca_cert_pem_path: &'a String,
+    pub ca_key_pem_path: &'a String,
+    pub target_hostname: &'a String,
+    pub target_ip: &'a String,
+    pub distinguished_common_name: &'a String,
+    pub cert_file_out_path: &'a String,
+    pub cert_key_out_path: &'a String,
+    pub cert_lifetime_days: &'a i64,
 }

@@ -2,12 +2,18 @@ use std::{
     fs::File,
     io::{Read, Write},
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
-use colored::Colorize;
+use axum::body::Body;
 use gumdrop::Options;
+use hyper_rustls::HttpsConnectorBuilder;
+use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use log::{LevelFilter, debug, error, info};
-use sekai_injector::{Config, certificates::generate_certs_interactive, server};
+use sekai_injector::{
+    Config, Manager, certificates::generate_certs_interactive, load_injection_map, server,
+};
+use tokio::sync::RwLock;
 
 #[derive(Debug, Options)]
 struct CommandOptions {
@@ -79,8 +85,6 @@ async fn main() {
         None => "sekai-injector.toml".to_string(),
     };
 
-    info!("{}", "ハローセカイ!".green());
-
     debug!("Using config: {config_path}");
 
     let config_path = Path::new(&config_path);
@@ -143,7 +147,26 @@ async fn main() {
             }
         };
     } else if let Some(Command::Start(ref _start_options)) = opts.command {
-        server::serve(config_holder).await;
+        let injection_hashmap = load_injection_map(&config_holder.resource_config);
+
+        // Create a client to handle making HTTPS requests
+        let https = HttpsConnectorBuilder::new()
+            .with_webpki_roots()
+            .https_or_http()
+            .enable_all_versions()
+            .build();
+
+        let client = Client::builder(TokioExecutor::new()).build::<_, Body>(https);
+
+        // Create manager containing our config and injection_hashmap and HTTPS client
+        let manager = Arc::new(RwLock::new(Manager {
+            injection_hashmap,
+            config: config_holder,
+            client,
+            statistics: (0, 0),
+        }));
+
+        server::serve(manager).await;
     }
 }
 
@@ -161,9 +184,9 @@ fn decrypt(infile: &Path, outfile: &Path) -> std::io::Result<()> {
         for _ in (0..128).step_by(8) {
             let mut block = [0u8; 8];
             fin.read_exact(&mut block)?;
-            for i in 0..5 {
+            (0..5).for_each(|i| {
                 block[i] = !block[i];
-            }
+            });
             fout.write_all(&block)?;
         }
         let mut buffer = [0u8; 8];
@@ -193,9 +216,9 @@ fn encrypt(infile: &Path, outfile: &Path) -> std::io::Result<()> {
     for _ in (0..128).step_by(8) {
         let mut block = [0u8; 8];
         if fin.read_exact(&mut block).is_ok() {
-            for i in 0..5 {
+            (0..5).for_each(|i| {
                 block[i] = !block[i];
-            }
+            });
             fout.write_all(&block)?;
         } else {
             break; // File is smaller than 128 bytes
