@@ -12,10 +12,10 @@ use time::{Duration, OffsetDateTime};
 use crate::{CertificateGenParams, utils::Config};
 
 pub fn generate_ca(
-    ca_common_name: String,
+    ca_common_name: &str,
     ca_lifetime_days: i64,
-    cert_file_path: String,
-    cert_key_path: String,
+    cert_file_path: &str,
+    cert_key_path: &str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Set up parameters for the CA
     let mut params = CertificateParams::default();
@@ -59,8 +59,8 @@ pub fn new_self_signed_cert(
 
     // Set up parameters for the server certificate
     let mut params = CertificateParams::new(vec![
-        cert_gen_params.target_hostname.clone(),
-        cert_gen_params.target_ip.clone(),
+        cert_gen_params.target_hostname.to_string(),
+        cert_gen_params.target_ip.to_string(),
     ])?;
     params.key_usages = vec![
         KeyUsagePurpose::DigitalSignature,
@@ -69,7 +69,7 @@ pub fn new_self_signed_cert(
     params.extended_key_usages = vec![ExtendedKeyUsagePurpose::ServerAuth];
     params.not_before = OffsetDateTime::now_utc();
     params.not_after =
-        OffsetDateTime::now_utc() + Duration::days(*cert_gen_params.cert_lifetime_days);
+        OffsetDateTime::now_utc() + Duration::days(cert_gen_params.cert_lifetime_days);
 
     // Set the Distinguished Name
     let mut dn = DistinguishedName::new();
@@ -120,10 +120,10 @@ pub fn generate_certs_interactive(config_holder: &Config) {
 
     if !Path::new(&ca_cert_file_path).exists() && !Path::new(&ca_cert_key_path).exists() {
         match generate_ca(
-            ca_common_name,
+            &ca_common_name,
             ca_lifetime_days,
-            ca_cert_file_path.clone(),
-            ca_cert_key_path.clone(),
+            &ca_cert_file_path.clone(),
+            &ca_cert_key_path.clone(),
         ) {
             Ok(_) => info!("Succesfully generated CA!"),
             Err(e) => {
@@ -184,7 +184,7 @@ pub fn generate_certs_interactive(config_holder: &Config) {
         distinguished_common_name: &distinguished_common_name,
         cert_file_out_path: &cert_file_out_path,
         cert_key_out_path: &cert_key_out_path,
-        cert_lifetime_days: &cert_lifetime_days,
+        cert_lifetime_days,
     }) {
         Ok(_) => info!("Succesfully signed certificate with CA"),
         Err(e) => {
@@ -196,4 +196,106 @@ pub fn generate_certs_interactive(config_holder: &Config) {
         "\nFinished generating CA and certificates. Remember to NEVER share the following files with anyone else: \n{}\n{}\n{}\n{}",
         &ca_cert_file_path, &ca_cert_key_path, &cert_file_out_path, &cert_key_out_path
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use openssl::{ec::EcKey, nid::Nid, x509::X509};
+    use tempfile::NamedTempFile;
+
+    use super::{generate_ca, new_self_signed_cert};
+    use crate::CertificateGenParams;
+
+    #[test]
+    fn cert_generation() {
+        let ca_cert_pem_path = NamedTempFile::new().unwrap().into_temp_path();
+        let ca_cert_pem_path = ca_cert_pem_path.to_str().unwrap();
+
+        let ca_key_pem_path = NamedTempFile::new().unwrap().into_temp_path();
+        let ca_key_pem_path = ca_key_pem_path.to_str().unwrap();
+
+        let cert_file_out_path = NamedTempFile::new().unwrap().into_temp_path();
+        let cert_file_out_path = cert_file_out_path.to_str().unwrap();
+
+        let cert_key_out_path = NamedTempFile::new().unwrap().into_temp_path();
+        let cert_key_out_path = cert_key_out_path.to_str().unwrap();
+
+        generate_ca(
+            "Sekai Injector Test CA",
+            360,
+            ca_cert_pem_path,
+            ca_key_pem_path,
+        )
+        .unwrap();
+
+        new_self_signed_cert(CertificateGenParams {
+            ca_cert_pem_path,
+            ca_key_pem_path,
+            target_hostname: "example.com",
+            target_ip: "127.0.0.1",
+            distinguished_common_name: "Sekai Injector Test",
+            cert_file_out_path,
+            cert_key_out_path,
+            cert_lifetime_days: 360,
+        })
+        .unwrap();
+
+        // Test CA Cert
+
+        let cert = std::fs::read(ca_cert_pem_path).expect("Unable to read file");
+
+        let res = X509::from_pem(&cert).unwrap();
+        let debugged = format!("{:#?}", res);
+
+        // Check common name
+        assert!(debugged.contains("commonName = \"Sekai Injector Test CA\""));
+
+        // Check organization name
+        assert!(debugged.contains("organizationName = \"Sekai Injector Organization\""));
+
+        // Test CA Key
+
+        let cert = std::fs::read(ca_key_pem_path).expect("Unable to read file");
+
+        match EcKey::private_key_from_pem(&cert) {
+            Ok(ec_key) => {
+                let group = ec_key.group();
+                let curve_name = group.curve_name().unwrap_or(Nid::UNDEF);
+                assert_eq!(format!("{:?}", curve_name), "Nid(415)");
+            }
+            Err(e) => {
+                panic!("Failed to parse ECDSA private key: {}", e);
+            }
+        }
+
+        // Test server cert
+        let cert = std::fs::read(cert_file_out_path).expect("Unable to read file");
+
+        let res = X509::from_pem(&cert).unwrap();
+        let debugged = format!("{:#?}", res);
+
+        // Check common name
+        assert!(debugged.contains("commonName = \"Sekai Injector Test CA\""));
+
+        // Check organization name
+        assert!(debugged.contains("organizationName = \"Sekai Injector Organization\""));
+
+        // Check alt names
+        assert!(debugged.contains("example.com"));
+        assert!(debugged.contains("127.0.0.1"));
+
+        // Test server key
+        let cert = std::fs::read(cert_key_out_path).expect("Unable to read file");
+
+        match EcKey::private_key_from_pem(&cert) {
+            Ok(ec_key) => {
+                let group = ec_key.group();
+                let curve_name = group.curve_name().unwrap_or(Nid::UNDEF);
+                assert_eq!(format!("{:?}", curve_name), "Nid(415)");
+            }
+            Err(e) => {
+                panic!("Failed to parse ECDSA private key: {}", e);
+            }
+        }
+    }
 }
