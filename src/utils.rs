@@ -38,12 +38,12 @@ pub struct InjectionMap {
 }
 
 pub struct CertificateGenParams<'a> {
-    pub ca_cert_pem_path: &'a String,
-    pub ca_key_pem_path: &'a String,
-    pub target_hostname: &'a String,
-    pub target_ip: &'a String,
-    pub distinguished_common_name: &'a String,
-    pub cert_file_out_path: &'a String,
-    pub cert_key_out_path: &'a String,
-    pub cert_lifetime_days: &'a i64,
+    pub ca_cert_pem_path: &'a str,
+    pub ca_key_pem_path: &'a str,
+    pub target_hostname: &'a str,
+    pub target_ip: &'a str,
+    pub distinguished_common_name: &'a str,
+    pub cert_file_out_path: &'a str,
+    pub cert_key_out_path: &'a str,
+    pub cert_lifetime_days: i64,
 }
