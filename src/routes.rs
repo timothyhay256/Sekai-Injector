@@ -10,10 +10,13 @@ use axum::{
 };
 use axum_extra::extract::Host;
 use hyper::Uri;
-use log::{error, info};
+use log::{debug, error, info};
 use tokio::{fs, sync::RwLock};
 
-use crate::utils::{Manager, Ports};
+use crate::{
+    RequestParams, RequestStatus,
+    utils::{Manager, Ports},
+};
 
 #[allow(dead_code)]
 pub async fn redirect_http_to_https(ports: Ports) {
@@ -65,15 +68,20 @@ pub async fn handler(
     mut request: Request<Body>,
 ) -> impl IntoResponse {
     let path = request.uri().path().to_string();
+    let mut request_params: RequestParams = (RequestStatus::Forwarded, path.clone(), None);
+
+    debug!("Handling request for {path}");
 
     if state.read().await.config.inject_resources {
         if let Some(local_file_path) = state.read().await.injection_hashmap.get(&path) {
-            let local_file_path = &local_file_path.0;
+            let local_file_path = local_file_path.0.clone();
 
-            match fs::read(local_file_path).await {
+            match fs::read(&local_file_path).await {
                 Ok(file_content) => {
                     info!("Injecting {local_file_path} to request {path}!");
-                    state.write().await.statistics.0 += 1;
+                    state.write().await.statistics.request_count.0 += 1;
+                    request_params.0 = RequestStatus::Proxied;
+                    request_params.2 = Some(local_file_path);
                     return Response::new(Body::from(file_content));
                 }
                 Err(_) => {
@@ -98,9 +106,18 @@ pub async fn handler(
 
     *request.uri_mut() = Uri::try_from(uri).unwrap();
 
-    match state.read().await.client.request(request).await {
+    let result = {
+        let state_guard = state.read().await;
+        state_guard.client.request(request).await
+    };
+
+    match result {
         Ok(request) => {
-            state.write().await.statistics.1 += 1;
+            {
+                let mut state_guard = state.write().await;
+                state_guard.statistics.request_count.1 += 1;
+                state_guard.statistics.requests.push(request_params);
+            }
             request.into_response()
         }
         Err(e) => {
