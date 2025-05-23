@@ -11,7 +11,8 @@ use hyper_rustls::HttpsConnectorBuilder;
 use hyper_util::{client::legacy::Client, rt::TokioExecutor};
 use log::{LevelFilter, debug, error, info};
 use sekai_injector::{
-    Config, Manager, certificates::generate_certs_interactive, load_injection_map, server,
+    Config, Manager, ServerStatistics, certificates::generate_certs_interactive,
+    load_injection_map, server,
 };
 use tokio::sync::RwLock;
 
@@ -163,7 +164,10 @@ async fn main() {
             injection_hashmap,
             config: config_holder,
             client,
-            statistics: (0, 0),
+            statistics: ServerStatistics {
+                request_count: (0, 0),
+                requests: Vec::new(),
+            },
         }));
 
         server::serve(manager).await;
