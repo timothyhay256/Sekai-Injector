@@ -46,10 +46,16 @@ pub async fn serve(manager: Arc<RwLock<Manager>>) -> Arc<RwLock<Manager>> {
     // run https server
     let addr = SocketAddr::from(([0, 0, 0, 0], ports.https));
     tracing::debug!("listening on {}", addr);
-    axum_server::bind_rustls(addr, config)
+    match axum_server::bind_rustls(addr, config)
         .serve(app.into_make_service())
         .await
-        .unwrap();
+    {
+        Ok(_) => {}
+        Err(e) => panic!(
+            "Failed to bind to 0.0.0.0:{}! You probably need to either run with root/admin, or run sudo setcap 'cap_net_bind_service=+ep' /path/to/binary to allow serving on port {}. Error: {}",
+            ports.https, ports.https, e
+        ),
+    };
 
     manager
 }

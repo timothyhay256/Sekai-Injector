@@ -56,7 +56,15 @@ pub async fn redirect_http_to_https(ports: Ports) {
     };
 
     let addr = SocketAddr::from(([0, 0, 0, 0], ports.http));
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(listener) => listener,
+        Err(e) => panic!(
+            "Failed to bind to 0.0.0.0:{}! You probably need to either run with root/admin, or run sudo setcap 'cap_net_bind_service=+ep' /path/to/binary to allow serving on port {}. Error: {}",
+            ports.http, ports.http, e
+        ),
+    };
+
     tracing::debug!("listening on {}", listener.local_addr().unwrap());
     axum::serve(listener, redirect.into_make_service())
         .await
