@@ -24,10 +24,7 @@ pub async fn serve(manager: Arc<RwLock<Manager>>) -> Arc<RwLock<Manager>> {
         .with(tracing_subscriber::fmt::layer())
         .try_init();
 
-    let ports = Ports {
-        http: 80,
-        https: 443,
-    };
+    let ports = Ports::default();
 
     // optional: spawn a second server to redirect http requests to this server
     tokio::spawn(routes::redirect_http_to_https(ports.clone()));
@@ -62,7 +59,7 @@ pub async fn serve(manager: Arc<RwLock<Manager>>) -> Arc<RwLock<Manager>> {
 
 pub fn load_injection_map(injection_map_path: &String) -> InjectionHashMap {
     if !Path::new(&injection_map_path).exists() {
-        error!("Cannot read {}!", injection_map_path);
+        error!("Cannot read {injection_map_path}!");
         exit(0);
     }
 

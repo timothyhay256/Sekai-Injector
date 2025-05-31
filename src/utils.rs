@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use axum::body::Body;
 use hyper_rustls::HttpsConnector;
 use hyper_util::client::legacy::Client;
+use local_ip_address::local_ip;
 use serde::{Deserialize, Serialize};
 
 pub type InjectionHashMap = HashMap<String, (String, bool)>;
@@ -25,10 +26,32 @@ pub struct Config {
     pub server_key: String,
 }
 
+impl Default for Config {
+    fn default() -> Self {
+        Config {
+            inject_resources: true,
+            resource_config: "injections.toml".to_string(),
+            upstream_host: "assetbundle.sekai-en.com".to_string(),
+            target_ip: local_ip().unwrap().to_string(),
+            server_cert: "server_cert.pem".to_string(),
+            server_key: "server_key.pem".to_string(),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Ports {
     pub http: u16,
     pub https: u16,
+}
+
+impl Default for Ports {
+    fn default() -> Self {
+        Ports {
+            http: 80,
+            https: 443,
+        }
+    }
 }
 
 #[derive(Clone)]
