@@ -9,7 +9,7 @@ use std::{
 
 use axum::handler::Handler;
 use axum_server::tls_rustls::RustlsConfig;
-use log::error;
+use log::{error, warn};
 use tokio::sync::RwLock;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -59,20 +59,22 @@ pub async fn serve(manager: Arc<RwLock<Manager>>) -> Arc<RwLock<Manager>> {
 
 pub fn load_injection_map(injection_map_path: &String) -> InjectionHashMap {
     if !Path::new(&injection_map_path).exists() {
-        error!("Cannot read {injection_map_path}!");
-        exit(0);
+        warn!("Cannot read {injection_map_path}! Using default empty map.");
     }
 
     let mut injection_map_file_contents = String::new();
-    let mut injection_map_file = File::open(injection_map_path)
-        .unwrap_or_else(|_| panic!("Could not open {injection_map_path}. Do I have permission?"));
-    injection_map_file
-        .read_to_string(&mut injection_map_file_contents)
-        .expect(
-            "The injection map file contains non UTF-8 characters, what in the world did you put in it??",
-        );
-    let injection_map: InjectionMap = toml::from_str(&injection_map_file_contents)
-        .expect("The injection map file was not formatted properly and could not be read.");
+
+    let injection_map: InjectionMap = match File::open(injection_map_path) {
+        Ok(mut file) => {
+            file.read_to_string(&mut injection_map_file_contents).expect("The config file contains non UTF-8 characters, what in the world did you put in it??");
+            toml::from_str(&injection_map_file_contents)
+                .expect("The config file was not formatted properly and could not be read.")
+        }
+        Err(_) => {
+            warn!("No valid injection map found, using empty map!");
+            InjectionMap { map: Vec::new() }
+        }
+    };
 
     injection_map
         .map
