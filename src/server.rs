@@ -3,13 +3,12 @@ use std::{
     io::Read,
     net::SocketAddr,
     path::{Path, PathBuf},
-    process::exit,
     sync::Arc,
 };
 
 use axum::handler::Handler;
 use axum_server::tls_rustls::RustlsConfig;
-use log::{error, warn};
+use log::warn;
 use tokio::sync::RwLock;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 

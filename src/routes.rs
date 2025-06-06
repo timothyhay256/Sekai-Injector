@@ -80,21 +80,21 @@ pub async fn handler(
 
     debug!("Handling request for {path}");
 
-    if state.read().await.config.inject_resources {
-        if let Some(local_file_path) = state.read().await.injection_hashmap.get(&path) {
-            let local_file_path = local_file_path.0.clone();
+    if state.read().await.config.inject_resources
+        && let Some(local_file_path) = state.read().await.injection_hashmap.get(&path)
+    {
+        let local_file_path = local_file_path.0.clone();
 
-            match fs::read(&local_file_path).await {
-                Ok(file_content) => {
-                    info!("Injecting {local_file_path} to request {path}!");
-                    state.write().await.statistics.request_count.0 += 1;
-                    request_params.0 = RequestStatus::Proxied;
-                    request_params.2 = Some(local_file_path);
-                    return Response::new(Body::from(file_content));
-                }
-                Err(_) => {
-                    error!("Could not find {local_file_path}, redirecting instead!");
-                }
+        match fs::read(&local_file_path).await {
+            Ok(file_content) => {
+                info!("Injecting {local_file_path} to request {path}!");
+                state.write().await.statistics.request_count.0 += 1;
+                request_params.0 = RequestStatus::Proxied;
+                request_params.2 = Some(local_file_path);
+                return Response::new(Body::from(file_content));
+            }
+            Err(_) => {
+                error!("Could not find {local_file_path}, redirecting instead!");
             }
         }
     }
