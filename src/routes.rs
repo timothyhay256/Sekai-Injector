@@ -88,7 +88,7 @@ pub async fn handler(
 
             prefixed.push_str(prefix);
 
-            if !prefix.ends_with('/') {
+            if !prefix.ends_with('/') && !path.starts_with("/") {
                 prefixed.push('/');
             }
             format!("{prefixed}{path}")
