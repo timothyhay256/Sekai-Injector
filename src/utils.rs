@@ -24,6 +24,7 @@ pub struct Config {
     pub target_ip: String,
     pub server_cert: String,
     pub server_key: String,
+    pub resource_prefix: Option<String>,
 }
 
 impl Default for Config {
@@ -35,6 +36,7 @@ impl Default for Config {
             target_ip: local_ip().unwrap().to_string(),
             server_cert: "server_cert.pem".to_string(),
             server_key: "server_key.pem".to_string(),
+            resource_prefix: None,
         }
     }
 }

@@ -1,9 +1,4 @@
-use std::{
-    fs::File,
-    io::Read,
-    path::Path,
-    sync::Arc,
-};
+use std::{fs::File, io::Read, path::Path, sync::Arc};
 
 use axum::body::Body;
 use gumdrop::Options;
