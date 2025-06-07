@@ -75,7 +75,7 @@ async fn main() {
     if let Some(Command::GenerateCerts(ref _generate_certs_options)) = opts.command {
         generate_certs_interactive(&config_holder);
     } else if let Some(Command::Start(ref _start_options)) = opts.command {
-        let injection_hashmap = load_injection_map(&config_holder.resource_config);
+        let injection_hashmap = load_injection_map(&config_holder);
 
         // Create a client to handle making HTTPS requests
         let https = HttpsConnectorBuilder::new()

@@ -12,7 +12,7 @@ use log::warn;
 use tokio::sync::RwLock;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::{InjectionHashMap, InjectionMap, Manager, Ports, routes};
+use crate::{Config, InjectionHashMap, InjectionMap, Manager, Ports, routes};
 
 pub async fn serve(manager: Arc<RwLock<Manager>>) -> Arc<RwLock<Manager>> {
     let _ = tracing_subscriber::registry()
@@ -56,7 +56,9 @@ pub async fn serve(manager: Arc<RwLock<Manager>>) -> Arc<RwLock<Manager>> {
     manager
 }
 
-pub fn load_injection_map(injection_map_path: &String) -> InjectionHashMap {
+pub fn load_injection_map(config: &Config) -> InjectionHashMap {
+    let injection_map_path = &config.resource_config;
+
     if !Path::new(&injection_map_path).exists() {
         warn!("Cannot read {injection_map_path}! Using default empty map.");
     }
@@ -79,7 +81,27 @@ pub fn load_injection_map(injection_map_path: &String) -> InjectionHashMap {
         .map
         .into_iter()
         .map(|(path_to_override, file_to_serve, enabled)| {
-            (path_to_override, (file_to_serve, enabled))
+            (
+                {
+                    if let Some(prefix) = &config.resource_prefix {
+                        let mut prefixed = String::new();
+
+                        if !prefix.starts_with('/') {
+                            prefixed.push('/');
+                        }
+
+                        prefixed.push_str(prefix);
+
+                        if !prefix.ends_with('/') && !path_to_override.starts_with("/") {
+                            prefixed.push('/');
+                        }
+                        format!("{prefixed}{path_to_override}")
+                    } else {
+                        path_to_override
+                    }
+                },
+                (file_to_serve, enabled),
+            )
         })
         .collect()
 }

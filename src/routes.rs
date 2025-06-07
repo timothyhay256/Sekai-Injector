@@ -78,25 +78,6 @@ pub async fn handler(
     let path = request.uri().path().to_string();
     let mut request_params: RequestParams = (RequestStatus::Forwarded, path.clone(), None);
 
-    let path = {
-        if let Some(prefix) = &state.read().await.config.resource_prefix {
-            let mut prefixed = String::new();
-
-            if !prefix.starts_with('/') {
-                prefixed.push('/');
-            }
-
-            prefixed.push_str(prefix);
-
-            if !prefix.ends_with('/') && !path.starts_with("/") {
-                prefixed.push('/');
-            }
-            format!("{prefixed}{path}")
-        } else {
-            path
-        }
-    };
-
     debug!("Handling request for {path}");
 
     if state.read().await.config.inject_resources
