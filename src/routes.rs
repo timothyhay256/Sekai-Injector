@@ -1,4 +1,4 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{net::SocketAddr, path::Path, sync::Arc};
 
 use axum::{
     BoxError,
@@ -6,12 +6,13 @@ use axum::{
     extract::{Request, State},
     handler::HandlerWithoutStateExt,
     http::{StatusCode, uri::Authority},
-    response::{IntoResponse, Redirect, Response},
+    response::{IntoResponse, Redirect},
 };
 use axum_extra::extract::Host;
 use hyper::Uri;
 use log::{debug, error, info};
-use tokio::{fs, sync::RwLock};
+use tokio::sync::RwLock;
+use tokio_util::io::ReaderStream;
 
 use crate::{
     RequestParams, RequestStatus,
@@ -80,21 +81,37 @@ pub async fn handler(
 
     debug!("Handling request for {path}");
 
-    if state.read().await.config.inject_resources
-        && let Some(local_file_path) = state.read().await.injection_hashmap.get(&path)
-    {
-        let local_file_path = local_file_path.0.clone();
+    let should_inject = {
+        let guard = state.read().await;
+        guard.config.inject_resources && guard.injection_hashmap.contains_key(&path)
+    };
 
-        match fs::read(&local_file_path).await {
+    if should_inject {
+        let local_file_path = {
+            let guard = state.read().await;
+            Path::new(&guard.injection_hashmap[&path].0).to_path_buf()
+        };
+
+        match tokio::fs::File::open(&local_file_path).await {
             Ok(file_content) => {
-                info!("Injecting {local_file_path} to request {path}!");
+                info!("Injecting {} to request {path}!", local_file_path.display());
+
                 state.write().await.statistics.request_count.0 += 1;
                 request_params.0 = RequestStatus::Proxied;
-                request_params.2 = Some(local_file_path);
-                return Response::new(Body::from(file_content));
+                request_params.2 = Some(local_file_path.display().to_string());
+
+                // convert the `AsyncRead` into a `Stream`
+                let stream = ReaderStream::new(file_content);
+                // convert the `Stream` into an `axum::body::HttpBody`
+                let body = axum::body::Body::from_stream(stream);
+
+                return body.into_response();
             }
             Err(_) => {
-                error!("Could not find {local_file_path}, redirecting instead!");
+                error!(
+                    "Could not find {}, redirecting instead!",
+                    local_file_path.display()
+                );
             }
         }
     }

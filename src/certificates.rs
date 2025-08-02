@@ -245,7 +245,7 @@ mod tests {
         let cert = std::fs::read(ca_cert_pem_path).expect("Unable to read file");
 
         let res = X509::from_pem(&cert).unwrap();
-        let debugged = format!("{:#?}", res);
+        let debugged = format!("{res:#?}");
 
         // Check common name
         assert!(debugged.contains("commonName = \"Sekai Injector Test CA\""));
@@ -261,10 +261,10 @@ mod tests {
             Ok(ec_key) => {
                 let group = ec_key.group();
                 let curve_name = group.curve_name().unwrap_or(Nid::UNDEF);
-                assert_eq!(format!("{:?}", curve_name), "Nid(415)");
+                assert_eq!(format!("{curve_name:?}"), "Nid(415)");
             }
             Err(e) => {
-                panic!("Failed to parse ECDSA private key: {}", e);
+                panic!("Failed to parse ECDSA private key: {e}");
             }
         }
 
@@ -272,7 +272,7 @@ mod tests {
         let cert = std::fs::read(cert_file_out_path).expect("Unable to read file");
 
         let res = X509::from_pem(&cert).unwrap();
-        let debugged = format!("{:#?}", res);
+        let debugged = format!("{res:#?}");
 
         // Check common name
         assert!(debugged.contains("commonName = \"Sekai Injector Test CA\""));
@@ -291,10 +291,10 @@ mod tests {
             Ok(ec_key) => {
                 let group = ec_key.group();
                 let curve_name = group.curve_name().unwrap_or(Nid::UNDEF);
-                assert_eq!(format!("{:?}", curve_name), "Nid(415)");
+                assert_eq!(format!("{curve_name:?}"), "Nid(415)");
             }
             Err(e) => {
-                panic!("Failed to parse ECDSA private key: {}", e);
+                panic!("Failed to parse ECDSA private key: {e}");
             }
         }
     }
