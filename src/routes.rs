@@ -73,6 +73,7 @@ pub async fn redirect_http_to_https(ports: Ports) {
 }
 
 pub async fn handler(
+    Host(host): Host,
     State(state): State<Arc<RwLock<Manager>>>,
     mut request: Request<Body>,
 ) -> impl IntoResponse {
@@ -89,7 +90,7 @@ pub async fn handler(
     if should_inject {
         let local_file_path = {
             let guard = state.read().await;
-            Path::new(&guard.injection_hashmap[&path].0).to_path_buf()
+            Path::new(&guard.injection_hashmap[&host][&path].0).to_path_buf()
         };
 
         match tokio::fs::File::open(&local_file_path).await {
@@ -123,11 +124,7 @@ pub async fn handler(
         .map(|v| v.as_str())
         .unwrap_or(&path);
 
-    let uri = format!(
-        "https://{}{}",
-        state.read().await.config.upstream_host,
-        path_query
-    );
+    let uri = format!("https://{host}{path_query}");
 
     *request.uri_mut() = Uri::try_from(uri).unwrap();
 

@@ -8,12 +8,17 @@
 	
 [![Build](https://github.com/timothyhay256/Sekai-Injector/actions/workflows/rust.yml/badge.svg)](https://github.com/timothyhay256/Sekai-Injector/actions/workflows/rust.yml)
 
+</div>
+
+### Sekai Injector
+An simple Rust crate providing an lib/bin interface to selectively inject network resources into an application. Used by [MikuMikuLoader](https://github.com/timothyhay256/MikuMikuLoader).  
+
+Provides an interface to generate CA/server certificates for your target domain(s), and a simple configuration file to configure injected resources. Supports multiple domains.  
+
 ### Demo video
 This injects a simple modified scenario into Project Sekai, resulting in custom text.
 
 https://github.com/user-attachments/assets/67990292-ff0b-4ed7-a8fb-09c073507db1
-
-</div>
 
 It uses the following injections.toml: 
 ```
@@ -37,15 +42,24 @@ Where `whip-2024-scenario-override-encrypted` was modified using [UABE](https://
 Modify the config file to match your needs:
 
 ```
-inject_resources = true                     - Is the program enabled?
-resource_config = "injections.toml"         - Where should the injection map be loaded from?
-upstream_host = "assetbundle.sekai-en.com"  - What is the host we are spoofing?
-target_ip = "192.168.86.183"                - What IP should the certificate be valid for
-server_cert = "server_cert.pem"             - Server cert path 
-server_key = "server_key.pem"               - Server cert key path
+inject_resources = true                     # Is the program enabled?
+target_ip = "192.168.86.183"                # What IP should the certificate be valid for?
+
+[[domains]]
+resource_config = "injections-ab.toml"      # Where should the injection map be loaded from for this domain?
+address = "assetbundle.sekai-en.com"        # Host of this domain
+server_cert = "server_cert_ab.pem"          # Server cert path
+server_key = "server_key_ab.pem"            # Server key path
+    
+#[[domains]]                                # An additional domain
+#resource_config = "injections-abinfo.toml"
+#address = "assetbundle-info.sekai-en.com"
+#server_cert = "server_cert_abinfo.pem"
+#server_key = "server_key_abinfo.pem"
+
 ```
 
-And modify injections.toml:
+And modify injections-ab.toml:
 ```
 map = [
     [

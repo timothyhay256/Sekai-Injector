@@ -1,15 +1,23 @@
-use std::{fs::File, io::Write, path::Path, process::exit};
+use std::{
+    fs::File,
+    io::{BufReader, Write},
+    path::Path,
+    process::exit,
+    sync::Arc,
+};
 
 use colored::Colorize;
-use inquire::{CustomType, Text};
+use inquire::{Confirm, CustomType, Text};
+use itertools::izip;
 use log::{error, info};
 use rcgen::{
     BasicConstraints, CertificateParams, DistinguishedName, DnType, ExtendedKeyUsagePurpose, IsCa,
     KeyPair, KeyUsagePurpose, SerialNumber,
 };
+use rustls::{crypto::aws_lc_rs::sign::any_supported_type, sign::CertifiedKey};
 use time::{Duration, OffsetDateTime};
 
-use crate::{CertificateGenParams, utils::Config};
+use crate::{CertificateGenParams, CustomCertResolver, Domain, utils::Config};
 
 pub fn generate_ca(
     ca_common_name: &str,
@@ -136,23 +144,52 @@ pub fn generate_certs_interactive(config_holder: &Config) {
         exit(1);
     }
 
-    info!("Signing new certificate with CA");
+    info!("Signing new certificate(s) with CA");
 
-    let target_hostname = Text::new("What should the target hostname be?")
-        .with_default(&config_holder.upstream_host)
-        .prompt()
-        .unwrap();
+    let (target_hostname, cert_file_out_paths, cert_key_out_paths) = {
+        let auto_or_manual =
+            Confirm::new("Generate certificates for all hostnames listed in the config?")
+                .with_default(true)
+                .prompt();
+
+        let domain_info = config_holder.extract_domain_info();
+        match auto_or_manual {
+            Ok(true) => (domain_info.0, domain_info.1, domain_info.2),
+            Ok(false) => (
+                vec![
+                    Text::new("Enter hostname to generate certificate for.")
+                        .prompt()
+                        .unwrap(),
+                ],
+                vec![
+                    Text::new("Enter certificate file output file name.")
+                        .prompt()
+                        .unwrap(),
+                ],
+                vec![
+                    Text::new("Enter certificate key output file name.")
+                        .prompt()
+                        .unwrap(),
+                ],
+            ),
+            Err(_) => {
+                error!("Error with prompt, defaulting to all hostnames.");
+                (domain_info.0, domain_info.1, domain_info.2)
+            }
+        }
+    };
 
     let target_ip = Text::new("What should the target IP be?")
         .with_default(&config_holder.target_ip)
         .prompt()
         .unwrap();
 
-    let cert_lifetime_days: i64 = CustomType::new("How many days should the certificate be valid?")
-        .with_error_message("Please type a valid number")
-        .with_default(3650)
-        .prompt()
-        .unwrap();
+    let cert_lifetime_days: i64 =
+        CustomType::new("How many days should the certificate(s) be valid?")
+            .with_error_message("Please type a valid number")
+            .with_default(3650)
+            .prompt()
+            .unwrap();
 
     let ca_cert_pem_path = Text::new("CA certificate path")
         .with_default("ca_cert.pem")
@@ -164,38 +201,55 @@ pub fn generate_certs_interactive(config_holder: &Config) {
         .prompt()
         .unwrap();
 
-    let distinguished_common_name = config_holder.upstream_host.clone();
-
-    let cert_file_out_path = Text::new("Signed certificate output")
-        .with_default(&config_holder.server_cert)
-        .prompt()
-        .unwrap();
-
-    let cert_key_out_path = Text::new("Signed certificate key output")
-        .with_default(&config_holder.server_key)
-        .prompt()
-        .unwrap();
-
-    match new_self_signed_cert(CertificateGenParams {
-        ca_cert_pem_path: &ca_cert_pem_path,
-        ca_key_pem_path: &ca_key_pem_path,
-        target_hostname: &target_hostname,
-        target_ip: &target_ip,
-        distinguished_common_name: &distinguished_common_name,
-        cert_file_out_path: &cert_file_out_path,
-        cert_key_out_path: &cert_key_out_path,
-        cert_lifetime_days,
-    }) {
-        Ok(_) => info!("Succesfully signed certificate with CA"),
-        Err(e) => {
-            error!("There was an issue signing the certificate: {e}");
-            exit(1);
+    for (hostname, cert_path, key_path) in
+        izip!(&target_hostname, &cert_file_out_paths, &cert_key_out_paths)
+    {
+        match new_self_signed_cert(CertificateGenParams {
+            ca_cert_pem_path: &ca_cert_pem_path,
+            ca_key_pem_path: &ca_key_pem_path,
+            target_hostname: hostname,
+            target_ip: &target_ip,
+            distinguished_common_name: hostname,
+            cert_file_out_path: cert_path,
+            cert_key_out_path: key_path,
+            cert_lifetime_days,
+        }) {
+            Ok(_) => info!("Succesfully signed certificate with CA"),
+            Err(e) => {
+                error!("There was an issue signing the certificate: {e}");
+                exit(1);
+            }
         }
     }
+
     info!(
-        "\nFinished generating CA and certificates. Remember to NEVER share the following files with anyone else: \n{}\n{}\n{}\n{}",
-        &ca_cert_file_path, &ca_cert_key_path, &cert_file_out_path, &cert_key_out_path
+        "\nFinished generating CA and certificates. Remember to NEVER share the following files with anyone else: \n{}\n{}\n{:?}\n{:?}",
+        &ca_cert_file_path, &ca_cert_key_path, &cert_file_out_paths, &cert_key_out_paths
     );
+}
+
+pub fn load_certs(domains: &Vec<Domain>) -> Result<CustomCertResolver, anyhow::Error> {
+    let mut resolver = CustomCertResolver::new();
+
+    for domain in domains {
+        let cert_file = &mut BufReader::new(File::open(&domain.server_cert)?);
+        let private_key_file = &mut BufReader::new(File::open(&domain.server_key)?);
+
+        let certs = rustls_pemfile::certs(cert_file).collect::<Result<Vec<_>, _>>()?;
+
+        let private_key = rustls_pemfile::private_key(private_key_file)?.unwrap();
+
+        resolver.map.insert(
+            domain.address.clone(),
+            Arc::new(CertifiedKey {
+                cert: certs,
+                key: any_supported_type(&private_key).unwrap(),
+                ocsp: None,
+            }),
+        );
+    }
+
+    Ok(resolver)
 }
 
 #[cfg(test)]

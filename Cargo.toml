@@ -28,6 +28,11 @@ rand = "0.9.1"
 serde_json = "1.0.140"
 local-ip-address = "0.6.5"
 tokio-util = "0.7.15"
+itertools = "0.14.0"
+postgres = "0.19.10"
+rustls = "0.23.31"
+anyhow = "1.0.98"
+rustls-pemfile = "2.2.0"
 
 [dev-dependencies]
 tempfile = "3.20.0"

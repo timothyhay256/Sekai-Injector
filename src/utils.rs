@@ -1,12 +1,17 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use axum::body::Body;
 use hyper_rustls::HttpsConnector;
 use hyper_util::client::legacy::Client;
 use local_ip_address::local_ip;
+use rustls::{
+    server::{ClientHello, ResolvesServerCert},
+    sign::CertifiedKey,
+};
 use serde::{Deserialize, Serialize};
 
-pub type InjectionHashMap = HashMap<String, (String, bool)>;
+pub type InjectionMapEntry = HashMap<String, (String, bool)>;
+pub type InjectionHashMap = HashMap<String, InjectionMapEntry>;
 type InjectionMapItem = Vec<(String, String, bool)>;
 pub type RequestParams = (RequestStatus, String, Option<String>);
 
@@ -15,29 +20,51 @@ pub enum RequestStatus {
     Proxied,
     Forwarded,
 }
+#[derive(Deserialize, Debug, Clone)]
+pub struct Domain {
+    pub address: String,
+    pub resource_config: String,
+    pub server_cert: String,
+    pub server_key: String,
+    pub resource_prefix: Option<String>,
+}
+
+impl Default for Domain {
+    fn default() -> Self {
+        Domain {
+            address: "assetbundle.sekai-en.com".to_string(),
+            resource_config: "injections.toml".to_string(),
+            server_cert: "server_cert.pem".to_string(),
+            server_key: "server_key.pem".to_string(),
+            resource_prefix: None,
+        }
+    }
+}
 
 #[derive(Deserialize, Debug, Clone)]
 pub struct Config {
     pub inject_resources: bool,
-    pub resource_config: String,
-    pub upstream_host: String,
+    pub domains: Vec<Domain>,
     pub target_ip: String,
-    pub server_cert: String,
-    pub server_key: String,
-    pub resource_prefix: Option<String>,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Config {
             inject_resources: true,
-            resource_config: "injections.toml".to_string(),
-            upstream_host: "assetbundle.sekai-en.com".to_string(),
+            domains: vec![Domain::default()],
             target_ip: local_ip().unwrap().to_string(),
-            server_cert: "server_cert.pem".to_string(),
-            server_key: "server_key.pem".to_string(),
-            resource_prefix: None,
         }
+    }
+}
+
+impl Config {
+    pub fn extract_domain_info(&self) -> (Vec<String>, Vec<String>, Vec<String>) {
+        let addresses = self.domains.iter().map(|d| d.address.clone()).collect();
+        let certs = self.domains.iter().map(|d| d.server_cert.clone()).collect();
+        let keys = self.domains.iter().map(|d| d.server_key.clone()).collect();
+
+        (addresses, certs, keys)
     }
 }
 
@@ -66,8 +93,10 @@ pub struct Manager {
 
 #[derive(Clone, Serialize)]
 pub struct ServerStatistics {
-    pub request_count: (i32, i32), // (proxied requests, injected requests)
-    pub requests: Vec<RequestParams>, // (Type of request (proxied or injected), request path, Option<injected path>)
+    /// (proxied requests, injected requests)
+    pub request_count: (i32, i32),
+    /// (Type of request (proxied or injected), request path, Option<injected path>)
+    pub requests: Vec<RequestParams>,
 }
 
 #[derive(Clone, Deserialize)]
@@ -84,4 +113,32 @@ pub struct CertificateGenParams<'a> {
     pub cert_file_out_path: &'a str,
     pub cert_key_out_path: &'a str,
     pub cert_lifetime_days: i64,
+}
+
+#[derive(Debug)]
+pub struct CustomCertResolver {
+    pub map: HashMap<String, Arc<CertifiedKey>>,
+}
+
+impl CustomCertResolver {
+    pub fn new() -> Self {
+        CustomCertResolver {
+            map: HashMap::new(),
+        }
+    }
+}
+
+impl Default for CustomCertResolver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ResolvesServerCert for CustomCertResolver {
+    fn resolve(&self, client_hello: ClientHello) -> Option<Arc<CertifiedKey>> {
+        match client_hello.server_name() {
+            Some(sni) => self.map.get(sni).cloned(),
+            None => None, // No SNI information
+        }
+    }
 }

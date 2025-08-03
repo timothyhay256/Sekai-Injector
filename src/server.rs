@@ -1,18 +1,13 @@
-use std::{
-    fs::File,
-    io::Read,
-    net::SocketAddr,
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::{collections::HashMap, fs::File, io::Read, net::SocketAddr, path::Path, sync::Arc};
 
 use axum::handler::Handler;
 use axum_server::tls_rustls::RustlsConfig;
 use log::warn;
+use rustls::ServerConfig;
 use tokio::sync::RwLock;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::{Config, InjectionHashMap, InjectionMap, Manager, Ports, routes};
+use crate::{Config, InjectionMap, InjectionMapEntry, Manager, Ports, load_certs, routes};
 
 pub async fn serve(manager: Arc<RwLock<Manager>>) -> Arc<RwLock<Manager>> {
     let _ = tracing_subscriber::registry()
@@ -25,16 +20,17 @@ pub async fn serve(manager: Arc<RwLock<Manager>>) -> Arc<RwLock<Manager>> {
 
     let ports = Ports::default();
 
-    // optional: spawn a second server to redirect http requests to this server
     tokio::spawn(routes::redirect_http_to_https(ports.clone()));
 
-    // configure certificate and private key used by https
-    let config = RustlsConfig::from_pem_file(
-        PathBuf::from(&manager.read().await.config.server_cert),
-        PathBuf::from(&manager.read().await.config.server_key),
-    )
-    .await
-    .unwrap();
+    // load certs into an map to be used by custom resolver
+    let cert_map =
+        load_certs(&manager.read().await.config.domains).expect("Could not load certificates!");
+
+    let tls_config = ServerConfig::builder()
+        .with_no_client_auth()
+        .with_cert_resolver(Arc::new(cert_map));
+
+    let config = RustlsConfig::from_config(Arc::new(tls_config));
 
     let owned_manager = Arc::clone(&manager);
     let app = routes::handler.with_state(owned_manager);
@@ -56,52 +52,60 @@ pub async fn serve(manager: Arc<RwLock<Manager>>) -> Arc<RwLock<Manager>> {
     manager
 }
 
-pub fn load_injection_map(config: &Config) -> InjectionHashMap {
-    let injection_map_path = &config.resource_config;
+pub fn load_injection_maps(config: &Config) -> HashMap<String, InjectionMapEntry> {
+    let mut configs = HashMap::new();
 
-    if !Path::new(&injection_map_path).exists() {
-        warn!("Cannot read {injection_map_path}! Using default empty map.");
+    for domain in &config.domains {
+        let injection_map_path = &domain.resource_config;
+
+        if !Path::new(&injection_map_path).exists() {
+            warn!("Cannot read {injection_map_path}! Using default empty map.");
+        }
+
+        let mut injection_map_file_contents = String::new();
+
+        let injection_map: InjectionMap = match File::open(injection_map_path) {
+            Ok(mut file) => {
+                file.read_to_string(&mut injection_map_file_contents).expect("The config file contains non UTF-8 characters, what in the world did you put in it??");
+                toml::from_str(&injection_map_file_contents)
+                    .expect("The config file was not formatted properly and could not be read.")
+            }
+            Err(_) => {
+                warn!("No valid injection map found, using empty map!");
+                InjectionMap { map: Vec::new() }
+            }
+        };
+
+        configs.insert(
+            domain.address.clone(),
+            injection_map
+                .map
+                .into_iter()
+                .map(|(path_to_override, file_to_serve, enabled)| {
+                    (
+                        {
+                            if let Some(prefix) = &domain.resource_prefix {
+                                let mut prefixed = String::new();
+
+                                if !prefix.starts_with('/') {
+                                    prefixed.push('/');
+                                }
+
+                                prefixed.push_str(prefix);
+
+                                if !prefix.ends_with('/') && !path_to_override.starts_with("/") {
+                                    prefixed.push('/');
+                                }
+                                format!("{prefixed}{path_to_override}")
+                            } else {
+                                path_to_override
+                            }
+                        },
+                        (file_to_serve, enabled),
+                    )
+                })
+                .collect(),
+        );
     }
-
-    let mut injection_map_file_contents = String::new();
-
-    let injection_map: InjectionMap = match File::open(injection_map_path) {
-        Ok(mut file) => {
-            file.read_to_string(&mut injection_map_file_contents).expect("The config file contains non UTF-8 characters, what in the world did you put in it??");
-            toml::from_str(&injection_map_file_contents)
-                .expect("The config file was not formatted properly and could not be read.")
-        }
-        Err(_) => {
-            warn!("No valid injection map found, using empty map!");
-            InjectionMap { map: Vec::new() }
-        }
-    };
-
-    injection_map
-        .map
-        .into_iter()
-        .map(|(path_to_override, file_to_serve, enabled)| {
-            (
-                {
-                    if let Some(prefix) = &config.resource_prefix {
-                        let mut prefixed = String::new();
-
-                        if !prefix.starts_with('/') {
-                            prefixed.push('/');
-                        }
-
-                        prefixed.push_str(prefix);
-
-                        if !prefix.ends_with('/') && !path_to_override.starts_with("/") {
-                            prefixed.push('/');
-                        }
-                        format!("{prefixed}{path_to_override}")
-                    } else {
-                        path_to_override
-                    }
-                },
-                (file_to_serve, enabled),
-            )
-        })
-        .collect()
+    configs
 }
