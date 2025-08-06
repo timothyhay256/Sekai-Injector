@@ -59,6 +59,7 @@ impl Default for Config {
 }
 
 impl Config {
+    /// Returns three Vecs, contianing the domain address, cert path, and key path respectively.
     pub fn extract_domain_info(&self) -> (Vec<String>, Vec<String>, Vec<String>) {
         let addresses = self.domains.iter().map(|d| d.address.clone()).collect();
         let certs = self.domains.iter().map(|d| d.server_cert.clone()).collect();

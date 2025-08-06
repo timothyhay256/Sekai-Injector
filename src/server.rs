@@ -7,7 +7,9 @@ use rustls::ServerConfig;
 use tokio::sync::RwLock;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::{Config, InjectionMap, InjectionMapEntry, Manager, Ports, load_certs, routes};
+use crate::{
+    Config, InjectionHashMap, InjectionMap, InjectionMapEntry, Manager, Ports, load_certs, routes,
+};
 
 pub async fn serve(manager: Arc<RwLock<Manager>>) -> Arc<RwLock<Manager>> {
     let _ = tracing_subscriber::registry()
@@ -52,7 +54,9 @@ pub async fn serve(manager: Arc<RwLock<Manager>>) -> Arc<RwLock<Manager>> {
     manager
 }
 
-pub fn load_injection_maps(config: &Config) -> HashMap<String, InjectionMapEntry> {
+/// Load the injection hashmaps from the config, respecting any prefix set by
+/// returning the path appended with the prefix in the returned `InjectionHashMap`
+pub fn load_injection_maps(config: &Config) -> InjectionHashMap {
     let mut configs = HashMap::new();
 
     for domain in &config.domains {
@@ -93,7 +97,11 @@ pub fn load_injection_maps(config: &Config) -> HashMap<String, InjectionMapEntry
 
                                 prefixed.push_str(prefix);
 
-                                if !prefix.ends_with('/') && !path_to_override.starts_with("/") {
+                                if !prefix.ends_with('/')
+                                    && !path_to_override.starts_with("/")
+                                    && !path_to_override.is_empty()
+                                // In case the prefix is being used as the resource path
+                                {
                                     prefixed.push('/');
                                 }
                                 format!("{prefixed}{path_to_override}")

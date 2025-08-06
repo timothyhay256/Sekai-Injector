@@ -84,7 +84,7 @@ pub async fn handler(
 
     let should_inject = {
         let guard = state.read().await;
-        guard.config.inject_resources && guard.injection_hashmap.contains_key(&path)
+        guard.config.inject_resources && guard.injection_hashmap[&host].contains_key(&path)
     };
 
     if should_inject {
