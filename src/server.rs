@@ -7,9 +7,7 @@ use rustls::ServerConfig;
 use tokio::sync::RwLock;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use crate::{
-    Config, InjectionHashMap, InjectionMap, InjectionMapEntry, Manager, Ports, load_certs, routes,
-};
+use crate::{Config, InjectionHashMap, InjectionMap, Manager, Ports, load_certs, routes};
 
 pub async fn serve(manager: Arc<RwLock<Manager>>) -> Arc<RwLock<Manager>> {
     let _ = tracing_subscriber::registry()

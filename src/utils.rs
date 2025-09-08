@@ -10,6 +10,7 @@ use rustls::{
 };
 use serde::{Deserialize, Serialize};
 
+/// path to override, file to serve, enabled
 pub type InjectionMapEntry = HashMap<String, (String, bool)>;
 pub type InjectionHashMap = HashMap<String, InjectionMapEntry>;
 type InjectionMapItem = Vec<(String, String, bool)>;
