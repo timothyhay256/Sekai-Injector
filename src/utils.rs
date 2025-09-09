@@ -101,7 +101,7 @@ pub struct ServerStatistics {
     pub requests: Vec<RequestParams>,
 }
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct InjectionMap {
     pub map: InjectionMapItem,
 }
